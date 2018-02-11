@@ -80,6 +80,7 @@ public class AuthorActivity extends MvpActivity<AuthorView, AuthorPresenter> imp
                 onBackPressed();
             }
         });
+
         mUnLimit91Adapter.setOnLoadMoreListener(new BaseQuickAdapter.RequestLoadMoreListener() {
             @Override
             public void onLoadMoreRequested() {

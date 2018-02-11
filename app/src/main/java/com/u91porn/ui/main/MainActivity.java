@@ -10,14 +10,19 @@ import android.support.design.widget.FloatingActionButton;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentManager;
 import android.support.v4.app.FragmentTransaction;
+import android.text.InputType;
+import android.text.TextUtils;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
+import com.u91porn.ui.download.DownloadActivity;
+import com.u91porn.utils.UserHelper;
 import com.ashokvarma.bottomnavigation.BottomNavigationBar;
 import com.ashokvarma.bottomnavigation.BottomNavigationItem;
 import com.bugsnag.android.Bugsnag;
 import com.bugsnag.android.Severity;
+import com.danikula.videocache.HttpProxyCacheServer;
 import com.devbrackets.android.exomedia.util.ResourceUtil;
 import com.google.gson.Gson;
 import com.liulishuo.filedownloader.FileDownloader;
@@ -26,15 +31,30 @@ import com.qmuiteam.qmui.widget.dialog.QMUIBottomSheet;
 import com.qmuiteam.qmui.widget.dialog.QMUIDialog;
 import com.qmuiteam.qmui.widget.dialog.QMUIDialogAction;
 import com.sdsmdg.tastytoast.TastyToast;
+import com.trello.lifecycle2.android.lifecycle.AndroidLifecycle;
 import com.u91porn.BuildConfig;
+import com.u91porn.MyApplication;
 import com.u91porn.R;
+import com.u91porn.cookie.SetCookieCache;
+import com.u91porn.cookie.SharedPrefsCookiePersistor;
+import com.u91porn.data.ApiManager;
 import com.u91porn.data.GitHubServiceApi;
+import com.u91porn.data.NoLimit91PornServiceApi;
+import com.u91porn.data.cache.CacheProviders;
+import com.u91porn.data.dao.DataBaseManager;
 import com.u91porn.data.model.Notice;
+import com.u91porn.data.model.UnLimit91PornItem;
 import com.u91porn.data.model.UpdateVersion;
+import com.u91porn.data.model.User;
+import com.u91porn.data.model.VideoResult;
+import com.u91porn.eventbus.DownloadEvent;
 import com.u91porn.eventbus.LowMemoryEvent;
+import com.u91porn.service.DownloadVideoService;
 import com.u91porn.service.UpdateDownloadService;
 import com.u91porn.ui.MvpActivity;
 import com.u91porn.ui.basemain.BaseMainFragment;
+import com.u91porn.ui.download.DownloadPresenter;
+import com.u91porn.ui.favorite.FavoritePresenter;
 import com.u91porn.ui.images.Main99MmFragment;
 import com.u91porn.ui.images.MainMeiZiTuFragment;
 import com.u91porn.ui.mine.MineFragment;
@@ -43,19 +63,21 @@ import com.u91porn.ui.notice.NoticePresenter;
 import com.u91porn.ui.pigav.MainPigAvFragment;
 import com.u91porn.ui.porn91forum.Main91ForumFragment;
 import com.u91porn.ui.porn91video.Main91PronVideoFragment;
+import com.u91porn.ui.porn91video.play.PlayVideoPresenter;
 import com.u91porn.ui.porn91video.search.SearchActivity;
 import com.u91porn.ui.setting.SettingActivity;
 import com.u91porn.ui.update.UpdatePresenter;
 import com.u91porn.ui.user.UserLoginActivity;
 import com.u91porn.utils.AddressHelper;
 import com.u91porn.utils.ApkVersionUtils;
-import com.u91porn.utils.FragmentUtils;
-import com.u91porn.utils.SDCardUtils;
-import com.u91porn.utils.SPUtils;
-import com.u91porn.utils.UserHelper;
+import com.u91porn.utils.AppCacheUtils;
+import com.u91porn.utils.HeaderUtils;
 import com.u91porn.utils.constants.Constants;
+import com.u91porn.utils.FragmentUtils;
 import com.u91porn.utils.constants.Keys;
 import com.u91porn.utils.constants.PermissionConstants;
+import com.u91porn.utils.SDCardUtils;
+import com.u91porn.utils.SPUtils;
 import com.yanzhenjie.permission.AndPermission;
 import com.yanzhenjie.permission.PermissionListener;
 import com.yanzhenjie.permission.Rationale;
@@ -67,6 +89,7 @@ import org.greenrobot.eventbus.ThreadMode;
 
 import java.io.File;
 import java.util.Calendar;
+import java.util.Date;
 import java.util.List;
 
 import butterknife.BindView;
@@ -112,6 +135,7 @@ public class MainActivity extends MvpActivity<MainView, MainPresenter> implement
         setContentView(R.layout.activity_main);
         EventBus.getDefault().register(this);
         ButterKnife.bind(this);
+        mCurrentFragment = new Fragment();
         fragmentManager = getSupportFragmentManager();
         selectIndex = getIntent().getIntExtra(Keys.KEY_SELECT_INDEX, 0);
         if (savedInstanceState != null) {
@@ -159,11 +183,42 @@ public class MainActivity extends MvpActivity<MainView, MainPresenter> implement
             default:
         }
     }
+    public static int changePageNumber = -1;
+    public static int currBegin = -1;
+    private void showOpenNewForum() {
+        final QMUIDialog.EditTextDialogBuilder builder = new QMUIDialog.EditTextDialogBuilder(this);
+        builder.setTitle("请输入页码数值");
+        builder.setPlaceholder(String.valueOf(currBegin));
+        builder.setInputType(InputType.TYPE_CLASS_NUMBER);
+        builder.addAction("打开", new QMUIDialogAction.ActionListener() {
+            @Override
+            public void onClick(QMUIDialog dialog, int index) {
+                String tidStr = builder.getEditText().getText().toString().trim();
+                if (!TextUtils.isEmpty(tidStr) && TextUtils.isDigitsOnly(tidStr) && tidStr.length() <= 60) {
+                    Integer id = Integer.parseInt(tidStr);  dialog.dismiss();
+                    changePageNumber = id;
+                    showMessage("页面设置成功,请继续下拉 自动更新", TastyToast.SUCCESS);
+                } else {
+                    showMessage("请输入页码数值", TastyToast.INFO);
+                }
+            }
+        });
+        builder.addAction("返回", new QMUIDialogAction.ActionListener() {
+            @Override
+            public void onClick(QMUIDialog dialog, int index) {
+                dialog.dismiss();
+            }
+        });
+        builder.show();
+    }
 
     private void showVideoBottomSheet(int checkIndex) {
         new QMUIBottomSheet.BottomListSheetBuilder(this, true)
+                .addItem(ResourceUtil.getDrawable(this, R.drawable.ic_video_library_black_24dp), "分页 当前:"+currBegin)
                 .addItem(ResourceUtil.getDrawable(this, R.drawable.ic_search_black_24dp), "搜索91视频")
+                .addItem(ResourceUtil.getDrawable(this, R.drawable.ic_video_library_black_24dp), "查看下载")
                 .addItem(ResourceUtil.getDrawable(this, R.drawable.ic_video_library_black_24dp), "91视频")
+
                 .addItem(ResourceUtil.getDrawable(this, R.drawable.ic_video_library_black_24dp), "朱古力视频")
                 .setCheckedIndex(checkIndex)
                 .setOnSheetItemClickListener(new QMUIBottomSheet.BottomListSheetBuilder.OnSheetItemClickListener() {
@@ -172,7 +227,14 @@ public class MainActivity extends MvpActivity<MainView, MainPresenter> implement
                         dialog.dismiss();
                         switch (position) {
                             case 0:
+                                showOpenNewForum();
+                                break;
+                            case 1:
                                 goToSearchVideo();
+                                break;
+                            case 2:
+                                Intent intent = new Intent(context, DownloadActivity.class);
+                                startActivityWithAnimotion(intent);
                                 break;
                             default:
                                 handlerFirstTabClickToShow(position, selectIndex, true);
@@ -317,6 +379,68 @@ public class MainActivity extends MvpActivity<MainView, MainPresenter> implement
                 break;
             default:
         }
+    }
+
+    public PlayVideoPresenter createPresenter1() {
+        NoLimit91PornServiceApi mNoLimit91PornServiceApi = apiManager
+                .getNoLimit91PornService();
+        //CacheProviders cacheProviders = MyApplication.getInstace().getCacheProviders();
+        FavoritePresenter favoritePresenter = new FavoritePresenter(DataBaseManager.getInstance()
+                , mNoLimit91PornServiceApi, cacheProviders, null,// MyApplication.getInstace().getUser()
+                provider);
+        HttpProxyCacheServer cacheServer =httpProxyCacheServer;// MyApplication.getInstace().getProxy();
+        File videoCacheDir = AppCacheUtils.getVideoCacheDir(this);
+        DownloadPresenter downloadPresenter = new DownloadPresenter(DataBaseManager.getInstance()
+                , AndroidLifecycle.createLifecycleProvider(this), cacheServer, videoCacheDir);
+        SharedPrefsCookiePersistor sharedPrefsCookiePersistor = apiManager
+                .getSharedPrefsCookiePersistor();
+        SetCookieCache setCookieCache = apiManager.getSetCookieCache();
+        return new PlayVideoPresenter(mNoLimit91PornServiceApi, favoritePresenter,
+                downloadPresenter, sharedPrefsCookiePersistor, setCookieCache, cacheProviders,
+                provider, DataBaseManager.getInstance());
+    }
+
+    public PlayVideoPresenter createPresenter2() {
+        NoLimit91PornServiceApi mNoLimit91PornServiceApi =apiManager
+                .getNoLimit91PornService();
+
+        //cacheProviders;
+        //CacheProviders cacheProviders = cacheProviders;// MyApplication.getInstace().getCacheProviders();
+        FavoritePresenter favoritePresenter = new FavoritePresenter(DataBaseManager.getInstance()
+                , mNoLimit91PornServiceApi, cacheProviders, null,//
+                provider);
+        HttpProxyCacheServer cacheServer =httpProxyCacheServer;// MyApplication.getInstace().getProxy();
+        File videoCacheDir = AppCacheUtils.getVideoCacheDir(this);
+        DownloadPresenter downloadPresenter = new DownloadPresenter(DataBaseManager.getInstance()
+                , provider, cacheServer, videoCacheDir);
+        SharedPrefsCookiePersistor sharedPrefsCookiePersistor = apiManager
+                .getSharedPrefsCookiePersistor();
+        SetCookieCache setCookieCache = apiManager.getSetCookieCache();
+        return new PlayVideoPresenter(mNoLimit91PornServiceApi, favoritePresenter,
+                downloadPresenter, sharedPrefsCookiePersistor, setCookieCache, cacheProviders,
+                provider, DataBaseManager.getInstance());
+    }
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void startDownloadVideo(DownloadEvent event) {
+        UnLimit91PornItem tmp = DataBaseManager.getInstance().findByViewKey(event.getItem()
+                .getViewKey());
+        showMessage("开始下载 -> "+ event.getItem().getTitle(), TastyToast.INFO);
+        if (tmp == null || tmp.getVideoResult() == null) {
+            createPresenter2().loadVideoUrl(event.getItem());
+        } else {
+            if (event.getTag() == 1) {
+                boolean isDownloadNeedWifi = (boolean) SPUtils.get(this, Keys
+                        .KEY_SP_DOWNLOAD_VIDEO_NEED_WIFI, false);
+                createPresenter1().downloadVideo(event.getItem(), isDownloadNeedWifi, false);
+                Intent intent = new Intent(this, DownloadVideoService.class);
+                startService(intent);
+            }
+        }
+    }
+
+    public void parseDetail(UnLimit91PornItem item) {
+
     }
 
     private void showNeedSetAddressDialog() {

@@ -20,6 +20,7 @@ import com.u91porn.data.model.UnLimit91PornItem;
 import com.u91porn.data.model.VideoComment;
 import com.u91porn.data.model.VideoCommentResult;
 import com.u91porn.data.model.VideoResult;
+import com.u91porn.eventbus.DownloadEvent;
 import com.u91porn.exception.VideoException;
 import com.u91porn.parser.Parse91PronVideo;
 import com.u91porn.rxjava.CallBackWrapper;
@@ -29,6 +30,8 @@ import com.u91porn.ui.download.DownloadPresenter;
 import com.u91porn.ui.favorite.FavoritePresenter;
 import com.u91porn.utils.AddressHelper;
 import com.u91porn.utils.HeaderUtils;
+
+import org.greenrobot.eventbus.EventBus;
 
 import java.util.Date;
 import java.util.List;
@@ -64,7 +67,11 @@ public class PlayVideoPresenter extends MvpBasePresenter<PlayVideoView> implemen
     private int start = 1;
     private DataBaseManager dataBaseManager;
 
-    public PlayVideoPresenter(NoLimit91PornServiceApi mNoLimit91PornServiceApi, FavoritePresenter favoritePresenter, DownloadPresenter downloadPresenter, SharedPrefsCookiePersistor sharedPrefsCookiePersistor, SetCookieCache setCookieCache, CacheProviders cacheProviders, LifecycleProvider<Lifecycle.Event> provider, DataBaseManager dataBaseManager) {
+    public PlayVideoPresenter(NoLimit91PornServiceApi mNoLimit91PornServiceApi, FavoritePresenter
+            favoritePresenter, DownloadPresenter downloadPresenter, SharedPrefsCookiePersistor
+            sharedPrefsCookiePersistor, SetCookieCache setCookieCache, CacheProviders
+            cacheProviders, LifecycleProvider<Lifecycle.Event> provider, DataBaseManager
+            dataBaseManager) {
         this.mNoLimit91PornServiceApi = mNoLimit91PornServiceApi;
         this.favoritePresenter = favoritePresenter;
         this.downloadPresenter = downloadPresenter;
@@ -83,7 +90,8 @@ public class PlayVideoPresenter extends MvpBasePresenter<PlayVideoView> implemen
     public void loadVideoUrl(final UnLimit91PornItem unLimit91PornItem) {
         String viewKey = unLimit91PornItem.getViewKey();
         String ip = AddressHelper.getRandomIPAddress();
-        cacheProviders.getVideoPlayPage(mNoLimit91PornServiceApi.getVideoPlayPage(viewKey, ip, HeaderUtils.getIndexHeader()), new DynamicKey(viewKey), new EvictDynamicKey(false))
+        cacheProviders.getVideoPlayPage(mNoLimit91PornServiceApi.getVideoPlayPage(viewKey, ip,
+                HeaderUtils.getIndexHeader()), new DynamicKey(viewKey), new EvictDynamicKey(false))
                 .map(new Function<Reply<String>, String>() {
                     @Override
                     public String apply(Reply<String> responseBodyReply) throws Exception {
@@ -111,7 +119,9 @@ public class PlayVideoPresenter extends MvpBasePresenter<PlayVideoView> implemen
                             if (VideoResult.OUT_OF_WATCH_TIMES.equals(videoResult.getId())) {
                                 //尝试强行重置，并上报异常
                                 resetWatchTime(true);
-                                Bugsnag.notify(new Throwable(TAG + ":ten videos each day host:" + AddressHelper.getInstance().getVideo91PornAddress()), Severity.WARNING);
+                                Bugsnag.notify(new Throwable(TAG + ":ten videos each day host:" +
+                                        AddressHelper.getInstance().getVideo91PornAddress()),
+                                        Severity.WARNING);
                                 throw new VideoException("观看次数达到上限了！");
                             } else {
                                 throw new VideoException("解析视频链接失败了");
@@ -136,6 +146,7 @@ public class PlayVideoPresenter extends MvpBasePresenter<PlayVideoView> implemen
 
                     @Override
                     public void onSuccess(final VideoResult videoResult) {
+                        EventBus.getDefault().post(new DownloadEvent(saveVideoUrl(videoResult, unLimit91PornItem), 1));
                         resetWatchTime(false);
                         ifViewAttached(new ViewAction<PlayVideoView>() {
                             @Override
@@ -225,7 +236,8 @@ public class PlayVideoPresenter extends MvpBasePresenter<PlayVideoView> implemen
                         ifViewAttached(new ViewAction<PlayVideoView>() {
                             @Override
                             public void run(@NonNull PlayVideoView view) {
-                                Logger.t(TAG).d("------getVideoComments  onCancel----------------------------");
+                                Logger.t(TAG).d("------getVideoComments  " +
+                                        "onCancel----------------------------");
                                 if (start == 1) {
                                     view.loadVideoCommentError("取消请求");
                                 } else {
@@ -243,7 +255,8 @@ public class PlayVideoPresenter extends MvpBasePresenter<PlayVideoView> implemen
         String responseType = "json";
         String comments = "\"" + comment + "\"";
         Logger.d(comments);
-        mNoLimit91PornServiceApi.commentVideo(cpaintFunction, comments, uid, vid, responseType, referer)
+        mNoLimit91PornServiceApi.commentVideo(cpaintFunction, comments, uid, vid, responseType,
+                referer)
                 .map(new Function<String, VideoCommentResult>() {
                     @Override
                     public VideoCommentResult apply(String s) throws Exception {
@@ -256,11 +269,14 @@ public class PlayVideoPresenter extends MvpBasePresenter<PlayVideoView> implemen
                         String msg = "评论错误，未知错误";
                         if (videoCommentResult.getA().size() == 0) {
                             throw new VideoException("评论错误，未知错误");
-                        } else if (videoCommentResult.getA().get(0).getData() == VideoCommentResult.COMMENT_SUCCESS) {
+                        } else if (videoCommentResult.getA().get(0).getData() ==
+                                VideoCommentResult.COMMENT_SUCCESS) {
                             msg = "留言已经提交，审核后通过";
-                        } else if (videoCommentResult.getA().get(0).getData() == VideoCommentResult.COMMENT_ALLREADY) {
+                        } else if (videoCommentResult.getA().get(0).getData() ==
+                                VideoCommentResult.COMMENT_ALLREADY) {
                             throw new VideoException("你已经在这个视频下留言过");
-                        } else if (videoCommentResult.getA().get(0).getData() == VideoCommentResult.COMMENT_NO_PERMISION) {
+                        } else if (videoCommentResult.getA().get(0).getData() ==
+                                VideoCommentResult.COMMENT_NO_PERMISION) {
                             throw new VideoException("不允许留言!");
                         }
                         return msg;
@@ -298,7 +314,8 @@ public class PlayVideoPresenter extends MvpBasePresenter<PlayVideoView> implemen
     }
 
     @Override
-    public void replyComment(String comment, String username, String vid, String commentId, String referer) {
+    public void replyComment(String comment, String username, String vid, String commentId,
+                             String referer) {
         mNoLimit91PornServiceApi.replyComment(comment, username, vid, commentId, referer)
                 .retryWhen(new RetryWhenProcess(2))
                 .compose(RxSchedulersHelper.<String>ioMainThread())
@@ -357,7 +374,8 @@ public class PlayVideoPresenter extends MvpBasePresenter<PlayVideoView> implemen
                 boolean isDigitsOnly = TextUtils.isDigitsOnly(cookie.value());
                 if (!isDigitsOnly) {
                     Logger.t(TAG).d("观看次数cookies异常");
-                    Bugsnag.notify(new Throwable(TAG + ":cookie watchtimes is not DigitsOnly"), Severity.WARNING);
+                    Bugsnag.notify(new Throwable(TAG + ":cookie watchtimes is not DigitsOnly"),
+                            Severity.WARNING);
                 }
                 return isDigitsOnly;
             }
@@ -392,12 +410,14 @@ public class PlayVideoPresenter extends MvpBasePresenter<PlayVideoView> implemen
                     @Override
                     public void onError(String msg, int code) {
                         Logger.t(TAG).d("重置观看次数出错了：" + msg);
-                        Bugsnag.notify(new Throwable(TAG + ":reset watchTimes error:" + msg), Severity.WARNING);
+                        Bugsnag.notify(new Throwable(TAG + ":reset watchTimes error:" + msg),
+                                Severity.WARNING);
                     }
                 });
     }
 
-    private UnLimit91PornItem saveVideoUrl(VideoResult videoResult, UnLimit91PornItem unLimit91PornItem) {
+    private UnLimit91PornItem saveVideoUrl(VideoResult videoResult, UnLimit91PornItem
+            unLimit91PornItem) {
         dataBaseManager.insertOrReplaceInTx(videoResult);
         unLimit91PornItem.setVideoResult(videoResult);
         unLimit91PornItem.setViewHistoryDate(new Date());
@@ -406,8 +426,10 @@ public class PlayVideoPresenter extends MvpBasePresenter<PlayVideoView> implemen
     }
 
     @Override
-    public void downloadVideo(UnLimit91PornItem unLimit91PornItem, boolean isDownloadNeedWifi, boolean isForceReDownload) {
-        downloadPresenter.downloadVideo(unLimit91PornItem, isDownloadNeedWifi, isForceReDownload, new DownloadPresenter.DownloadListener() {
+    public void downloadVideo(UnLimit91PornItem unLimit91PornItem, boolean isDownloadNeedWifi,
+                              boolean isForceReDownload) {
+        downloadPresenter.downloadVideo(unLimit91PornItem, isDownloadNeedWifi, isForceReDownload,
+                new DownloadPresenter.DownloadListener() {
             @Override
             public void onSuccess(final String message) {
                 ifViewAttached(new ViewAction<PlayVideoView>() {
@@ -431,8 +453,10 @@ public class PlayVideoPresenter extends MvpBasePresenter<PlayVideoView> implemen
     }
 
     @Override
-    public void favorite(String cpaintFunction, String uId, String videoId, String ownnerId, String responseType, String referer) {
-        favoritePresenter.favorite(cpaintFunction, uId, videoId, ownnerId, responseType, referer, new FavoritePresenter.FavoriteListener() {
+    public void favorite(String cpaintFunction, String uId, String videoId, String ownnerId,
+                         String responseType, String referer) {
+        favoritePresenter.favorite(cpaintFunction, uId, videoId, ownnerId, responseType, referer,
+                new FavoritePresenter.FavoriteListener() {
             @Override
             public void onSuccess(String message) {
                 ifViewAttached(new ViewAction<PlayVideoView>() {

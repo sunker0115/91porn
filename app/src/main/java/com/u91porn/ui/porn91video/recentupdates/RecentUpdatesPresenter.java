@@ -2,7 +2,7 @@ package com.u91porn.ui.porn91video.recentupdates;
 
 import android.arch.lifecycle.Lifecycle;
 import android.support.annotation.NonNull;
-
+import com.sdsmdg.tastytoast.TastyToast;
 import com.hannesdorfmann.mosby3.mvp.MvpBasePresenter;
 import com.trello.rxlifecycle2.LifecycleProvider;
 import com.u91porn.data.NoLimit91PornServiceApi;
@@ -13,6 +13,7 @@ import com.u91porn.parser.Parse91PronVideo;
 import com.u91porn.rxjava.CallBackWrapper;
 import com.u91porn.rxjava.RetryWhenProcess;
 import com.u91porn.rxjava.RxSchedulersHelper;
+import com.u91porn.ui.main.MainActivity;
 import com.u91porn.utils.HeaderUtils;
 
 import java.util.List;
@@ -55,6 +56,7 @@ public class RecentUpdatesPresenter extends MvpBasePresenter<RecentUpdatesView> 
         this.noLimit91PornServiceApi = noLimit91PornServiceApi;
     }
 
+    RecentUpdatesView currView = null;
     @Override
     public void loadRecentUpdatesData(final boolean pullToRefresh, boolean cleanCache, String next) {
         //如果刷新则重置页数
@@ -62,6 +64,14 @@ public class RecentUpdatesPresenter extends MvpBasePresenter<RecentUpdatesView> 
             page = 1;
             isLoadMoreCleanCache = true;
         }
+        if(MainActivity.changePageNumber > 0) {
+            page =  MainActivity.changePageNumber ;
+            MainActivity.changePageNumber  = -1;
+            if(currView!=null) {
+                currView.showMessage("当前:" + page + "/" + totalPage, TastyToast.INFO);
+            }
+        }
+        MainActivity.currBegin  = page;
         DynamicKeyGroup dynamicKeyGroup = new DynamicKeyGroup(next, page);
         EvictDynamicKey evictDynamicKey = new EvictDynamicKey(cleanCache || isLoadMoreCleanCache);
 
@@ -109,8 +119,12 @@ public class RecentUpdatesPresenter extends MvpBasePresenter<RecentUpdatesView> 
                                     view.setData(unLimit91PornItems);
                                     view.showContent();
                                 } else {
+                                    currView = view;
                                     view.loadMoreDataComplete();
                                     view.setMoreData(unLimit91PornItems);
+                                    if(page % 5== 0) {
+                                        view.showMessage(page + "/" + totalPage, TastyToast.INFO);
+                                    }
                                 }
                                 //已经最后一页了
                                 if (page >= totalPage) {
