@@ -425,11 +425,15 @@ public class MainActivity extends MvpActivity<MainView, MainPresenter> implement
     public void startDownloadVideo(DownloadEvent event) {
         UnLimit91PornItem tmp = DataBaseManager.getInstance().findByViewKey(event.getItem()
                 .getViewKey());
-        showMessage("开始下载 -> "+ event.getItem().getTitle(), TastyToast.INFO);
-        if (tmp == null || tmp.getVideoResult() == null) {
+
+        if(event!=null && event.getTag()!=1) {
+            showMessage("开始下载 -> " + event.getItem().getTitle(), TastyToast.INFO);
+        }
+         if (tmp == null || tmp.getVideoResult() == null) {
             createPresenter2().loadVideoUrl(event.getItem());
         } else {
             if (event.getTag() == 1) {
+
                 boolean isDownloadNeedWifi = (boolean) SPUtils.get(this, Keys
                         .KEY_SP_DOWNLOAD_VIDEO_NEED_WIFI, false);
                 createPresenter1().downloadVideo(event.getItem(), isDownloadNeedWifi, false);

@@ -129,7 +129,7 @@ public class DownloadPresenter extends MvpBasePresenter<DownloadView> implements
             return;
         }
         Logger.d("视频连接：" + videoResult.getVideoUrl());
-        String path = SDCardUtils.DOWNLOAD_VIDEO_PATH + unLimit91PornItem.getTitle()+"-"+unLimit91PornItem.getViewKey() + ".mp4";
+        String path = SDCardUtils.DOWNLOAD_VIDEO_PATH + unLimit91PornItem.getTitle()+"-"+unLimit91PornItem.getViewKey().substring(0,1) + ".mp4";
         Logger.d(path);
         int id = DownloadManager.getImpl().startDownload(videoResult.getVideoUrl(), path, isDownloadNeedWifi, isForceReDownload);
         if (tmp.getAddDownloadDate() == null) {
